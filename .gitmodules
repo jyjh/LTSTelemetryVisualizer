@@ -1,0 +1,4 @@
+[submodule "external/plotly_matlab"]
+	path = external/plotly_matlab
+	url = https://github.com/plotly/plotly_matlab.git
+	branch = master
