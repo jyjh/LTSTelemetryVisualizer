@@ -1,8 +1,14 @@
 function track = loadTrack(trackFile)
 %LOADTRACK Read an optional reference track file.
+%
+% The returned struct carries the centerline (x, y), optional station s,
+% per-point half widths (leftWidth/rightWidth in meters, falling back to
+% width/2), and whether the circuit is closed. Widths feed the 3D track
+% ribbon; the correlation report only uses the centerline.
 
 track = struct('hasTrack', false, 'x', [], 'y', [], 's', [], ...
-    'label', '', 'width', NaN);
+    'label', '', 'width', NaN, 'leftWidth', [], 'rightWidth', [], ...
+    'closed', false);
 if isempty(trackFile)
     return;
 end
@@ -27,8 +33,9 @@ switch lower(ext)
                 else
                     track.s = ltsviz.pathStation(track.x, track.y, false);
                 end
-                if isfield(t, 'width_m')
-                    track.width = double(t.width_m);
+                [track.width, track.leftWidth, track.rightWidth] = trackWidths(t);
+                if isfield(t, 'closed')
+                    track.closed = logical(double(t.closed));
                 end
                 track.hasTrack = true;
             end
@@ -48,10 +55,78 @@ switch lower(ext)
             else
                 track.s = ltsviz.pathStation(track.x, track.y, false);
             end
+            [track.width, track.leftWidth, track.rightWidth] = ...
+                trackWidthsFromTable(T, names, info);
+            track.closed = endpointsClose(track.x, track.y);
             track.hasTrack = true;
         end
     otherwise
         warning('ltsviz:UnsupportedTrack', ...
             'Track file must be .mat or .csv, got %s.', ext);
 end
+end
+
+function [width, leftWidth, rightWidth] = trackWidths(t)
+width = NaN;
+leftWidth = [];
+rightWidth = [];
+if isfield(t, 'width_m')
+    width = scalarOrPerPoint(double(t.width_m));
+end
+if isfield(t, 'left_width_m')
+    leftWidth = double(t.left_width_m(:));
+end
+if isfield(t, 'right_width_m')
+    rightWidth = double(t.right_width_m(:));
+end
+n = numel(t.points_m);
+if isempty(leftWidth) && ~isempty(width) && isscalar(width)
+    leftWidth = repmat(width / 2, n, 1);
+end
+if isempty(rightWidth) && ~isempty(width) && isscalar(width)
+    rightWidth = repmat(width / 2, n, 1);
+end
+if isempty(width) && ~isempty(leftWidth) && ~isempty(rightWidth)
+    width = mean([leftWidth(:), rightWidth(:)], 'all');
+end
+end
+
+function [width, leftWidth, rightWidth] = trackWidthsFromTable(T, names, info)
+width = NaN;
+leftWidth = [];
+rightWidth = [];
+iw = ltsviz.findHeader(info, {'width_m', 'width'});
+if ~isempty(iw)
+    width = scalarOrPerPoint(double(T.(names{iw})(:)));
+end
+il = ltsviz.findHeader(info, {'left_width_m', 'left_width'});
+ir = ltsviz.findHeader(info, {'right_width_m', 'right_width'});
+if ~isempty(il)
+    leftWidth = double(T.(names{il})(:));
+end
+if ~isempty(ir)
+    rightWidth = double(T.(names{ir})(:));
+end
+n = height(T);
+if isempty(leftWidth) && isscalar(width) && ~isnan(width)
+    leftWidth = repmat(width / 2, n, 1);
+end
+if isempty(rightWidth) && isscalar(width) && ~isnan(width)
+    rightWidth = repmat(width / 2, n, 1);
+end
+end
+
+function value = scalarOrPerPoint(values)
+values = values(:);
+if numel(values) == 1
+    value = values(1);
+else
+    value = values;
+end
+end
+
+function tf = endpointsClose(x, y)
+% A centerline whose ends meet within half a meter is treated as a closed
+% circuit so the 3D ribbon and cone lines wrap seamlessly.
+tf = hypot(x(1) - x(end), y(1) - y(end)) < 0.5;
 end

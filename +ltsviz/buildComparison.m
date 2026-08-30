@@ -45,6 +45,7 @@ T.sim_throttle_ratio = interpFinite(simAxis, simRun.throttle, axis);
 T.sim_brake_ratio = interpFinite(simAxis, simRun.brake, axis);
 T.sim_yaw_rate_radps = interpFinite(simAxis, simRun.yawRate, axis);
 T.sim_lat_accel_g = interpFinite(simAxis, simRun.latAccelG, axis);
+T.sim_long_accel_g = interpFinite(simAxis, simRun.longAccelG, axis);
 
 if ~isempty(realRun)
     T.real_x_m = interpFinite(realAxis, realRun.xAligned, axis);
@@ -55,6 +56,7 @@ if ~isempty(realRun)
     T.real_brake_ratio = interpFinite(realAxis, realRun.brake, axis);
     T.real_yaw_rate_radps = interpFinite(realAxis, realRun.yawRate, axis);
     T.real_lat_accel_g = interpFinite(realAxis, realRun.latAccelG, axis);
+    T.real_long_accel_g = interpFinite(realAxis, realRun.longAccelG, axis);
 else
     T.real_x_m = NaN(size(axis));
     T.real_y_m = NaN(size(axis));
@@ -64,6 +66,7 @@ else
     T.real_brake_ratio = NaN(size(axis));
     T.real_yaw_rate_radps = NaN(size(axis));
     T.real_lat_accel_g = NaN(size(axis));
+    T.real_long_accel_g = NaN(size(axis));
 end
 
 T.path_error_m = hypot(T.sim_x_m - T.real_x_m, T.sim_y_m - T.real_y_m);
@@ -73,6 +76,7 @@ T.throttle_delta_ratio = T.sim_throttle_ratio - T.real_throttle_ratio;
 T.brake_delta_ratio = T.sim_brake_ratio - T.real_brake_ratio;
 T.yaw_rate_delta_radps = T.sim_yaw_rate_radps - T.real_yaw_rate_radps;
 T.lat_accel_delta_g = T.sim_lat_accel_g - T.real_lat_accel_g;
+T.long_accel_delta_g = T.sim_long_accel_g - T.real_long_accel_g;
 
 comparison = struct('mode', char(mode), 'axisName', axisName, 'axis', axis, 'table', T);
 end
