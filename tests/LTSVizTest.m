@@ -59,7 +59,7 @@ classdef LTSVizTest < matlab.unittest.TestCase
             testCase.verifyTrue(isfile(result.alignedCsv));
             testCase.verifyTrue(isfile(result.summaryJson));
             testCase.verifyTrue(isfile(result.sceneHtml));
-            testCase.verifyEqual(result.sceneHtml, sceneFile);
+            testCase.verifyEqual(result.sceneHtml, char(sceneFile));
             testCase.verifyTrue(contains(fileread(result.sceneHtml), 'LTS_SCENE'));
         end
 
@@ -91,7 +91,7 @@ classdef LTSVizTest < matlab.unittest.TestCase
             testCase.verifyTrue(scene.track.hasTrack);
             testCase.verifyTrue(scene.track.closed);
             testCase.verifyEqual(numel(scene.track.left), numel(scene.track.x));
-            testCase.verifyGreaterThan(scene.samples, 1);
+            testCase.verifyGreaterThan(scene.meta.samples, 1);
             testCase.verifyEqual(scene.meta.axisUnit, 's');
             testCase.verifyTrue(scene.meta.attitudeEstimated);
         end
@@ -122,6 +122,18 @@ classdef LTSVizTest < matlab.unittest.TestCase
                 'Local three.js vendor copy was not embedded.');
             testCase.verifyTrue(result.scene.meta.hasReal);
             testCase.verifyTrue(result.scene.track.hasTrack);
+        end
+
+        function rejectsSimCsvEqualToRealReplay(testCase)
+            csvFile = tempname + ".csv";
+            cleanup = onCleanup(@() deleteIfExists(csvFile));
+            fid = fopen(csvFile, 'w');
+            fprintf(fid, 'time_s,speed_mps,x_m,y_m\n');
+            fprintf(fid, '0,10,0,0\n1,10,10,0\n');
+            fclose(fid);
+
+            testCase.verifyError(@() ltsviz.prepareRuns('SimCsv', csvFile, ...
+                'RealReplayCsv', csvFile), 'ltsviz:SimCsvIsRealCsv');
         end
 
         function loadTrackReadsClosedMatTrack(testCase)
@@ -197,7 +209,7 @@ fclose(fid);
 end
 
 function run = curvedRun(label, speedScale)
-run = minimalRun(label, [], [], []);
+run = minimalRun(label, zeros(401, 1), zeros(401, 1), zeros(401, 1));
 n = 401;
 t = (0:n-1).' * 0.1;
 theta = 2 * pi * t / 40;
@@ -210,6 +222,9 @@ run.distance = [0; cumtrapz(t, speed)];
 run.steer = repmat(atan(3.0 / 30), n, 1);
 run.throttle = 0.5 + 0.4 * cos(theta);
 run.brake = 0.3 + 0.3 * sin(3 * theta);
+run.yaw = theta;
+run.yawRate = 2 * pi / 40 * ones(n, 1);
+run.gpsCourse = NaN(n, 1);
 run.latAccelG = speed.^2 / 30 / 9.80665;
 run.longAccelG = 0.15 * cos(2 * theta);
 end
@@ -233,6 +248,7 @@ run.throttle = zeros(size(time(:)));
 run.brake = zeros(size(time(:)));
 run.yawRate = zeros(size(time(:)));
 run.latAccelG = zeros(size(time(:)));
+run.longAccelG = zeros(size(time(:)));
 run.warnings = {};
 end
 

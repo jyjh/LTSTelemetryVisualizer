@@ -463,13 +463,16 @@
   CometTrail.prototype.reset = function () {
     this.line.geometry.setDrawRange(0, 0);
   };
-  CometTrail.prototype.update = function (run, idx, hx, hz) {
+  CometTrail.prototype.update = function (run, idx, hx, hz, offFn) {
     var head = Math.floor(idx);
     var count = Math.min(COMET, head + 2); // history samples + live head point
     var start = Math.max(0, head - (count - 2));
     var pts = [];
     for (var i = start; i <= head; i++) {
-      if (isFinite(run.x[i]) && isFinite(run.y[i])) pts.push([run.x[i], -run.y[i]]);
+      if (isFinite(run.x[i]) && isFinite(run.y[i])) {
+        var off = offFn ? offFn(i) : [0, 0];
+        pts.push([run.x[i] + off[0], -run.y[i] + off[1]]);
+      }
     }
     pts.push([hx, hz]);
     if (pts.length < 2) { this.reset(); return; }
@@ -495,6 +498,18 @@
   var player = { idx: 0, playing: true, rate: 1, loop: true };
   var camMode = 'orbit';
   var showTrail = true;
+  var diverge = 1; // reality-car displacement multiplier (visual only)
+
+  // Exaggerated sim-to-real separation at sample j: [dx, dz] in three
+  // coords. Zero unless the divergence scale is above 1x.
+  function divDelta(j) {
+    if (diverge <= 1 || !real) return [0, 0];
+    var jj = clamp(Math.round(j), 0, N - 1);
+    return [
+      (diverge - 1) * (real.x[jj] - sim.x[jj]),
+      (diverge - 1) * (sim.y[jj] - real.y[jj])
+    ];
+  }
 
   function setPlaying(on) {
     player.playing = on;
@@ -624,13 +639,18 @@
     if (showTrail) simComet.update(sim, i, s.x, s.z); else simComet.reset();
 
     if (realCar && r) {
-      realCar.root.position.set(r.x, 0, r.z);
+      var off = divDelta(i);
+      realCar.root.position.set(r.x + off[0], 0, r.z + off[1]);
       realCar.root.rotation.y = r.h;
       realCar.angle = r.h;
       realCar.tilt.rotation.x = r.roll;
       realCar.tilt.rotation.z = r.pitch;
       spinWheels(realCar, r.v, r.st);
-      if (showTrail) realComet.update(real, i, r.x, r.z); else realComet.reset();
+      if (showTrail) {
+        realComet.update(real, i, r.x + off[0], r.z + off[1], divDelta);
+      } else {
+        realComet.reset();
+      }
     }
 
     $('speedVal').textContent = Math.max(0, s.v).toFixed(0);
@@ -797,6 +817,8 @@
   if (!real) {
     $('tgReal').style.display = 'none';
     $('deltaPathChip').style.display = 'none';
+    $('dvgLabel').style.display = 'none';
+    $('dvgSel').style.display = 'none';
   }
 
   $('playBtn').addEventListener('click', function () { setPlaying(!player.playing); });
@@ -810,6 +832,10 @@
     seekIndex(e.target.value / 1000 * (N - 1));
   });
   $('rateSel').addEventListener('change', function (e) { player.rate = +e.target.value; });
+  $('dvgSel').addEventListener('change', function (e) {
+    diverge = +e.target.value;
+    toast('Reality divergence \u00d7' + diverge);
+  });
   $('loopBtn').addEventListener('click', function () {
     player.loop = !player.loop;
     this.classList.toggle('active', player.loop);
@@ -950,6 +976,13 @@
     var opts = $('rateSel').options;
     for (var oi = 0; oi < opts.length; oi++) {
       opts[oi].selected = String(player.rate) === opts[oi].value;
+    }
+  }
+  if (q.dvg !== undefined && isFinite(+q.dvg) && +q.dvg >= 1) {
+    diverge = +q.dvg;
+    var dOpts = $('dvgSel').options;
+    for (var di = 0; di < dOpts.length; di++) {
+      dOpts[di].selected = String(diverge) === dOpts[di].value;
     }
   }
   applyState();
