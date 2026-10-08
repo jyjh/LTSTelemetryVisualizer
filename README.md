@@ -71,7 +71,10 @@ the simulation; the red translucent ghost is the aligned real run.
 
 Body roll and pitch are *visual estimates* from the accelerometer channels
 (small capped gains), not measured suspension data; the viewer notes this
-in the telemetry panel.
+in the telemetry panel. Render-only smoothing: the car's yaw, body
+attitude, and displayed steering are lightly smoothed (a ~0.15 s window,
+plus a 0.5 m path lever for yaw) so GPS and sensor noise in real logs does
+not jitter the animation — positions, trails, and chart traces stay raw.
 
 ## Full correlation report
 

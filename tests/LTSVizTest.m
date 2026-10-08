@@ -136,6 +136,41 @@ classdef LTSVizTest < matlab.unittest.TestCase
                 'RealReplayCsv', csvFile), 'ltsviz:SimCsvIsRealCsv');
         end
 
+        function renderHeadingSuppressesGpsNoise(testCase)
+            % A noisy GPS straight with a standing start: raw tangent yaw
+            % flips tens of degrees per sample on this noise (and spins
+            % while parked); the render payload must stay near the true
+            % heading, vary smoothly, and hold while parked.
+            rng(0);
+            nPark = 100;
+            nDrive = 500;
+            n = nPark + nDrive;
+            dt = 0.01;
+            t = (0:n-1).' * dt;
+            % Standing start, then a physical 2 s ramp to 10 m/s.
+            vDrive = min(5 * (0:nDrive-1).' * dt, 10);
+            xDrive = [0; cumsum(vDrive(1:end-1) * dt)];
+            x = [0.01 * randn(nPark, 1); xDrive + 0.05 * randn(nDrive, 1)];
+            y = [0.01 * randn(nPark, 1); 0.05 * randn(nDrive, 1)];
+            sim = minimalRun('sim', t, x, y);
+            sim.speed = [zeros(nPark, 1); vDrive];
+            comparison = ltsviz.buildComparison(sim, struct([]));
+            track = ltsviz.loadTrack('');
+            summary = ltsviz.summarizeComparison(comparison, sim, ...
+                struct([]), struct('mode', 'none'), '');
+            scene = ltsviz.buildScene3D(sim, struct([]), track, ...
+                comparison, summary);
+
+            h = scene.sim.h;
+            testCase.verifyLessThan(max(abs(diff(h))), deg2rad(10), ...
+                'Render yaw must not flip sample-to-sample on GPS noise.');
+            testCase.verifyLessThan(max(abs(h(nPark+1:end))), deg2rad(25), ...
+                'Render yaw must stay near the true +x heading.');
+            testCase.verifyLessThan(max(h(1:nPark)) - min(h(1:nPark)), ...
+                deg2rad(2), ...
+                'Render yaw must hold (not spin) while parked.');
+        end
+
         function loadTrackReadsClosedMatTrack(testCase)
             matFile = tempname + ".mat";
             cleanup = onCleanup(@() deleteIfExists(matFile));

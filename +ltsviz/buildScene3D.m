@@ -134,19 +134,90 @@ lo = T.([prefix '_long_accel_g']);
 x = fillFinite(double(T.([prefix '_x_m'])));
 y = fillFinite(double(T.([prefix '_y_m'])));
 
+% Render-only smoothing: real logs carry GPS and sensor noise that the
+% per-sample derivative channels (yaw, body attitude, steering display)
+% would otherwise amplify into visible jitter. Positions, trails, and the
+% raw channels below stay untouched — only derived render quantities are
+% smoothed, over a fixed ~0.15 s window.
+w = renderWindow(axis);
+
 runPayload = struct();
 runPayload.t = round3(axis);
 runPayload.x = round3(x);
 runPayload.y = round3(y);
-runPayload.h = round4(tangentHeading(x, y));
+runPayload.h = round4(unwrap(renderHeading(x, y, w)));
 runPayload.v = round2(fillFinite(double(v), 0) * 3.6);
 runPayload.th = round3(clamp01(fillFinite(double(th), 0)));
 runPayload.br = round3(clamp01(fillFinite(double(br), 0)));
-runPayload.st = round4(fillFinite(double(st), 0));
-runPayload.la = round3(fillFinite(double(la), 0));
-runPayload.lo = round3(fillFinite(double(lo), 0));
+runPayload.st = round4(smoothRender(fillFinite(double(st), 0), w));
+runPayload.la = round3(smoothRender(fillFinite(double(la), 0), w));
+runPayload.lo = round3(smoothRender(fillFinite(double(lo), 0), w));
 runPayload.roll = rollFromLateral(runPayload.la);
 runPayload.pitch = pitchFromLongitudinal(runPayload.lo);
+end
+
+function w = renderWindow(axis)
+% Odd sample window closest to 0.15 s for the payload's sample rate.
+dt = median(diff(double(axis)));
+if ~isfinite(dt) || dt <= 0
+    dt = 0.01;
+end
+w = min(numel(axis), max(3, 2 * round(0.15 / dt / 2) + 1));
+if w < 3
+    w = 0; % signal smoothing off for degenerately short runs
+end
+end
+
+function out = smoothRender(values, w)
+if w < 3 || numel(values) < w
+    out = values;
+else
+    out = smoothdata(values, 'movmean', w);
+end
+end
+
+function h = renderHeading(x, y, w)
+% Yaw for the car mesh: the path tangent over a fixed ~0.5 m lever of
+% arc length on the lightly smoothed path. A space lever keeps GPS noise
+% equally suppressed at every speed, and the heading holds (instead of
+% spinning) wherever that lever of travel does not exist yet — standstill
+% and the very start/end of the log.
+if w < 3 || numel(x) < w
+    xs = x;
+    ys = y;
+else
+    xs = smoothdata(x, 'movmean', w);
+    ys = smoothdata(y, 'movmean', w);
+end
+n = numel(xs);
+h = nan(n, 1);
+if n < 2
+    return;
+end
+s = [0; cumsum(hypot(diff(xs), diff(ys)))]; % arc length (monotone)
+half = 0.25; % [m] half of the heading lever
+j = 1;
+k = 1;
+for i = 1:n
+    while s(i) - s(j) > half
+        j = j + 1;
+    end
+    while k < n && s(k) - s(i) < half
+        k = k + 1;
+    end
+    if s(i) >= half && (k < n || s(k) - s(j) >= 2 * half)
+        h(i) = atan2(ys(k) - ys(j), xs(k) - xs(j));
+    elseif i > 1
+        h(i) = h(i - 1);
+    end
+end
+if all(isnan(h))
+    h(:) = atan2(ys(n) - ys(1), xs(n) - xs(1));
+end
+first = find(~isnan(h), 1, 'first');
+if ~isempty(first) && first > 1
+    h(1:first - 1) = h(first); % pre-launch samples face the launch direction
+end
 end
 
 function roll = rollFromLateral(la)
@@ -165,20 +236,6 @@ gain = deg2rad(1.5);
 limit = deg2rad(4);
 pitch = clampFinite(lo * gain, -limit, limit);
 pitch = round4(pitch);
-end
-
-function h = tangentHeading(x, y)
-% Frame-safe heading from the path tangent (central differences).
-n = numel(x);
-h = zeros(n, 1);
-if n < 2
-    return;
-end
-h(1) = atan2(y(2) - y(1), x(2) - x(1));
-h(n) = atan2(y(n) - y(n-1), x(n) - x(n-1));
-for i = 2:n-1
-    h(i) = atan2(y(i+1) - y(i-1), x(i+1) - x(i-1));
-end
 end
 
 function out = clamp01(values)
